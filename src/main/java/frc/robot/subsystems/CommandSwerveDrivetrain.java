@@ -3,6 +3,8 @@ package frc.robot.subsystems;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+import static edu.wpi.first.units.Units.*;
+
 import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.swerve.SwerveDrivetrainConstants;
 import com.ctre.phoenix6.swerve.SwerveModuleConstants;
@@ -25,7 +27,9 @@ import edu.wpi.first.wpilibj.Notifier;
 import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Subsystem;
-import frc.robot.Constants.SwerveConstants.SwerveState;
+import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
+import frc.robot.Constants.SwerveConstants.TeleopSwerveState;
+import frc.robot.generated.TunerConstants;
 import frc.robot.generated.TunerConstants.TunerSwerveDrivetrain;
 
 /**
@@ -39,7 +43,15 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     private static final double kSimLoopPeriod = 0.004; // 4 ms
     private Notifier m_simNotifier = null;
     private double m_lastSimTime;
-    public SwerveState swerveState = SwerveState.STATIONARY;
+
+    private CommandXboxController swerveController;
+    private SwerveRequest.FieldCentric fieldCentric;
+    private SwerveRequest.SwerveDriveBrake swerveDriveBrake;
+
+    public TeleopSwerveState swerveState = TeleopSwerveState.IDLE;
+
+    private double MaxSpeed = 1.0 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
+    private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
 
     /* Blue alliance sees forward as 0 degrees (toward red alliance wall) */
     private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.kZero;
@@ -59,13 +71,19 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
      * getters in the classes.
      *
      * @param drivetrainConstants   Drivetrain-wide constants for the swerve drive
+     * @param controller Drivetrain controller
      * @param modules               Constants for each specific module
      */
     public CommandSwerveDrivetrain(
         SwerveDrivetrainConstants drivetrainConstants,
-        SwerveModuleConstants<?, ?, ?>... modules
-    ) {
+        CommandXboxController controller,
+        SwerveRequest.FieldCentric drive,
+        SwerveRequest.SwerveDriveBrake brake,
+        SwerveModuleConstants<?, ?, ?>... modules) {
         super(drivetrainConstants, modules);
+        this.swerveController = controller;
+        this.fieldCentric = drive;
+        this.swerveDriveBrake = brake;
         if (Utils.isSimulation()) {
             startSimThread();
         }
@@ -173,8 +191,20 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     @Override
     public void periodic() {
         switch(swerveState) {
-            case STATIONARY:
-            this.setControl(m_pathApplyRobotSpeeds);
+            case TELEOP_DRIVING:
+            this.applyRequest(() ->
+                (fieldCentric.withVelocityX(-swerveController.getLeftY() * MaxSpeed) // Drive forward with negative Y (forward)
+                    .withVelocityY(-swerveController.getLeftX() * MaxSpeed) // Drive left with negative X (left)
+                    .withRotationalRate(-swerveController.getRightX() * MaxAngularRate) // Drive counterclockwise with negative X (left)
+            ));
+            break;
+            case BRAKE:
+            this.applyRequest(() -> swerveDriveBrake);
+            break;
+            case IDLE:
+            this.applyRequest(() ->
+                (fieldCentric.withVelocityX(0)
+                    .withVelocityY(0)));
         }
 
         /*
@@ -254,5 +284,13 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     @Override
     public Optional<Pose2d> samplePoseAt(double timestampSeconds) {
         return super.samplePoseAt(Utils.fpgaToCurrentTime(timestampSeconds));
+    }
+
+    public void setState(TeleopSwerveState state) {
+        this.swerveState = state;
+    }
+
+    public TeleopSwerveState getSwerveState() {
+        return swerveState;
     }
 }

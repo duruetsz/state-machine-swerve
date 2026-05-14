@@ -2,10 +2,10 @@ package frc.robot;
 
 public class Constants {
     public class SwerveConstants {
-        // States
-        public enum SwerveState {
+        public enum TeleopSwerveState {
+            IDLE,
             TELEOP_DRIVING,
-            STATIONARY
+            BRAKE,
         }
     }
 }
